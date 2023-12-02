@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = [ "day01"]
+members = [ "day01", "day02"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
