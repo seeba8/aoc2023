@@ -12,7 +12,7 @@ use nom::character::complete::{alpha1, multispace0};
 use nom::combinator::map_res;
 use nom::sequence::{delimited};
 
-const INPUT: &str = include_str!("../../resources/day02.txt");
+const INPUT: &str = include_str!("input.txt");
 const PART1_BAG: Draw = Draw {
     red: 12,
     green: 13,
@@ -104,7 +104,7 @@ fn main() {
 mod tests {
     use super::*;
 
-    const EXAMPLE1: &str = include_str!("../../examples/day02.txt");
+    const EXAMPLE1: &str = include_str!("example.txt");
 
     #[test]
     fn it_parses_draw() {

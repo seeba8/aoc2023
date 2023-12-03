@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
 
-const INPUT: &str = include_str!("../../resources/day01.txt");
+const INPUT: &str = include_str!("input.txt");
 
 fn main() {
     println!("Day 01 part 1: {}", get_sum_of_calibration_values(INPUT));
@@ -76,8 +76,8 @@ impl ReplaceSpelledNumbers for &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const EXAMPLE1: &str = include_str!("../../examples/day01.txt");
-    const EXAMPLE2: &str = include_str!("../../examples/day01_2.txt");
+    const EXAMPLE1: &str = include_str!("example1.txt");
+    const EXAMPLE2: &str = include_str!("example2.txt");
 
     #[test]
     fn it_gets_calibration_value() {
