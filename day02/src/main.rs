@@ -1,16 +1,17 @@
 use std::cmp::Ordering;
+
 use nom::{
     bytes::complete::tag,
-    combinator::{all_consuming, map},
-    multi::{separated_list1},
-    sequence::{separated_pair, tuple},
-    Finish, IResult,
     character::complete::digit1,
+    combinator::{all_consuming, map},
+    Finish,
+    IResult, multi::separated_list1,
+    sequence::{separated_pair, tuple},
 };
 use nom::bytes::complete::tag_no_case;
 use nom::character::complete::{alpha1, multispace0};
 use nom::combinator::map_res;
-use nom::sequence::{delimited};
+use nom::sequence::delimited;
 
 const INPUT: &str = include_str!("input.txt");
 const PART1_BAG: Draw = Draw {
