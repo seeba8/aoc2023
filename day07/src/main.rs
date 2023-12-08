@@ -1,16 +1,19 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::ops::Shl;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use color_eyre::{Report, Result};
 use color_eyre::eyre::eyre;
 use Card::{Ace, Eight, Five, Four, Jack, King, Nine, Queen, Seven, Six, Ten, Three, Two};
 
 const INPUT: &str = include_str!("input.txt");
+
 fn main() -> Result<()> {
     color_eyre::install()?;
     let hands: Vec<Hand> = INPUT.trim().lines().map(Hand::from_str).collect::<Result<Vec<_>>>()?;
     println!("Day 07 part 1: {}", get_total_winnings(&hands));
+    let hands: Vec<Hand> = INPUT.trim().lines().map(|line| Hand::from_str(line).map(Hand::j_is_joker)).collect::<Result<Vec<_>>>()?;
+    println!("Day 07 part 2: {}", get_total_winnings(&hands));
     Ok(())
 }
 
@@ -30,6 +33,26 @@ enum Card {
     Four,
     Three,
     Two,
+}
+
+impl Display for Card {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Ace => "A",
+            King => "K",
+            Queen => "Q",
+            Jack => "J",
+            Ten => "T",
+            Nine => "9",
+            Eight => "8",
+            Seven => "7",
+            Six => "6",
+            Five => "5",
+            Four => "4",
+            Three => "3",
+            Two => "2",
+        })
+    }
 }
 
 impl TryFrom<char> for Card {
@@ -84,34 +107,48 @@ impl Hand {
             sort_order: 0,
             bid,
         };
-        s.set_hand_type();
-        s.set_sort_order();
+        s.set_hand_type(false);
+        s.set_sort_order(false);
         s
     }
 
-    fn set_sort_order(&mut self) {
-        let mut first_byte = u32::from((0b1111 - self.hand_type as u8) << 4);
-        first_byte |= u32::from(0b1111 - self.cards[0] as u8);
-        let second_byte = u32::from(((0b1111 - self.cards[1] as u8) << 4) | (0b1111 - self.cards[2] as u8));
-        let third_byte = u32::from(((0b1111 - self.cards[3] as u8) << 4) | (0b1111 - self.cards[4] as u8));
-        self.sort_order = first_byte.shl(24) | second_byte.shl(16) | third_byte.shl(8);
+    fn j_is_joker(mut self) -> Self {
+        self.set_hand_type(true);
+        self.set_sort_order(true);
+        self
     }
-    fn set_hand_type(&mut self) {
+
+    fn set_sort_order(&mut self, j_is_joker: bool) {
+        self.sort_order = u32::from((0b1111 - self.hand_type as u8) << 4);
+        for card in &self.cards {
+            self.sort_order <<= 4;
+            if !j_is_joker || *card != Jack {
+                self.sort_order |= u32::from(0b1111 - *card as u8);
+            }
+        }
+    }
+
+    fn set_hand_type(&mut self, j_is_joker: bool) {
         let mut buckets: HashMap<Card, u8> = HashMap::new();
         for card in self.cards {
             buckets.entry(card).and_modify(|v| *v += 1).or_insert(1);
         }
+        let num_jokers = if j_is_joker {
+            buckets.remove(&Jack).unwrap_or(0)
+        } else {
+            0
+        };
         self.hand_type = match buckets.len() {
-            1 => HandType::FiveOfAKind,
+            0 | 1 => HandType::FiveOfAKind,
             2 => {
-                if buckets.iter().any(|(_, num)| *num == 4) {
+                if buckets.iter().any(|(_, num)| *num + num_jokers == 4) {
                     HandType::FourOfAKind
                 } else {
                     HandType::FullHouse
                 }
             }
             3 => {
-                if buckets.iter().any(|(_, num)| *num == 3) {
+                if buckets.iter().any(|(_, num)| *num + num_jokers == 3) {
                     HandType::ThreeOfAKind
                 } else {
                     HandType::TwoPair
@@ -154,6 +191,15 @@ impl FromStr for Hand {
     }
 }
 
+impl Display for Hand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for c in &self.cards {
+            write!(f, "{c}")?;
+        }
+        Ok(())
+    }
+}
+
 fn get_total_winnings(hands: &[Hand]) -> usize {
     let mut hands: Vec<Hand> = hands.to_vec();
     hands.sort_unstable();
@@ -163,7 +209,9 @@ fn get_total_winnings(hands: &[Hand]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     const EXAMPLE: &str = include_str!("example.txt");
+
     #[test]
     fn it_compares_hands() {
         let a = Hand::new([Three, Three, Three, Three, Two], 0);
@@ -183,9 +231,37 @@ mod tests {
     }
 
     #[test]
-    fn it_gets_total_winnings() -> Result<()>{
+    fn it_gets_total_winnings() -> Result<()> {
         let hands: Vec<Hand> = EXAMPLE.trim().lines().map(Hand::from_str).collect::<Result<Vec<_>>>()?;
         assert_eq!(get_total_winnings(&hands), 6440);
         Ok(())
+    }
+
+    #[test]
+    fn it_gets_total_winnings_with_joker() -> Result<()> {
+        let hands: Vec<Hand> = EXAMPLE.trim().lines().map(|l| Hand::from_str(l).map(Hand::j_is_joker)).collect::<Result<Vec<_>>>()?;
+        assert_eq!(get_total_winnings(&hands), 5905);
+        Ok(())
+    }
+
+    #[test]
+    fn it_gets_ranking_with_joker() -> Result<()> {
+        let mut hands: Vec<Hand> = EXAMPLE.trim().lines().map(|l| Hand::from_str(l).map(Hand::j_is_joker)).collect::<Result<Vec<_>>>()?;
+        hands.sort_unstable();
+        assert_eq!(hands[0].to_string(), "32T3K");
+        assert_eq!(hands[1].to_string(), "KK677");
+        assert_eq!(hands[2].to_string(), "T55J5");
+        assert_eq!(hands[3].to_string(), "QQQJA");
+        assert_eq!(hands[4].to_string(), "KTJJT");
+        Ok(())
+    }
+
+    #[test]
+    fn it_ranks_joker_correctly() {
+        let a: Hand = "J2223 0".parse().unwrap();
+        let a = a.j_is_joker();
+        let b: Hand = "2KKKK 0".parse().unwrap();
+        let b = b.j_is_joker();
+        assert!(b > a);
     }
 }
