@@ -82,7 +82,7 @@ impl Almanac {
         for v in values.chunks_exact(2) {
             let range: Vec<usize> = (v[0]..(v[0]+v[1])).collect();
             minimum = minimum.min(self.get_minimum(&range));
-            dbg!(minimum);
+            //dbg!(minimum);
         }
         minimum
     }
