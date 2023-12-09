@@ -1,5 +1,3 @@
-extern crate core;
-
 use std::str::FromStr;
 const INPUT: &str = include_str!("input.txt");
 fn main() {
