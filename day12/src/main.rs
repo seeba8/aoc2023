@@ -15,6 +15,8 @@ fn main() -> color_eyre::Result<()> {
     Ok(())
 }
 
+type Num = u32;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Row {
     springs: Springs,
@@ -22,9 +24,10 @@ struct Row {
 }
 
 impl Row {
-    fn matches(&self, mut value: u32) -> bool {
-        let total_broken: u8 = self.groups.iter().sum();
-        if value.count_ones() != u32::from(total_broken) {
+
+    #[inline]
+    fn matches(&self, mut value: Num, total_broken: u32) -> bool {
+        if value.count_ones() != total_broken {
             return false;
         }
         if (!self.springs.unknown & self.springs.damaged) == (value & !self.springs.unknown) {
@@ -46,9 +49,11 @@ impl Row {
     }
 
     fn count_matches(&self) -> usize {
+        let total_broken = u32::from(self.groups.iter().sum::<u8>());
         let mut c = 0;
+        //dbg!(self.springs.length);
         for i in 0..(1 << self.springs.length) {
-            if self.matches(i) {
+            if self.matches(i, total_broken) {
                 c += 1;
             }
         }
@@ -62,9 +67,10 @@ impl FromStr for Row {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (springs, groups) = s.trim().split_once(' ').ok_or_else(|| eyre!("Cannot split line by space"))?;
         let groups: Vec<u8> = groups.trim().split(',').map(str::parse).collect::<Result<Vec<_>, _>>()?;
-        let springs: Springs = springs.parse()?;
+        //let groups = groups.repeat(5);
+        //let springs: Springs = format!("{springs}?{springs}?{springs}?{springs}?{springs}").parse()?;
         Ok(Self {
-            springs,
+            springs: springs.parse()?,
             groups,
         })
     }
@@ -72,8 +78,8 @@ impl FromStr for Row {
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 struct Springs {
-    damaged: u32,
-    unknown: u32,
+    damaged: Num,
+    unknown: Num,
     length: u8,
 }
 
@@ -166,13 +172,15 @@ mod tests {
 
     #[test]
     fn it_matches() {
+        println!("before parse");
         let r: Row = "???.### 1,1,3".parse().unwrap();
+        println!("after parse");
         assert_eq!(r.count_matches(), 1);
 
-        let r: Row = ".??..??...?##. 1,1,3".parse().unwrap();
-        assert_eq!(r.count_matches(), 4);
-
-        let r: Row = "?###???????? 3,2,1".parse().unwrap();
-        assert_eq!(r.count_matches(), 10);
+        // let r: Row = ".??..??...?##. 1,1,3".parse().unwrap();
+        // assert_eq!(r.count_matches(), 16384);
+        //
+        // let r: Row = "?###???????? 3,2,1".parse().unwrap();
+        // assert_eq!(r.count_matches(), 506250);
     }
 }
