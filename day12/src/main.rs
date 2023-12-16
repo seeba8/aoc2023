@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
-use std::io::Write;
+
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+
 use color_eyre::eyre::eyre;
 use color_eyre::{install, Report};
 
@@ -17,12 +19,27 @@ fn main() -> color_eyre::Result<()> {
     for row in &mut rows {
         row.unfold();
     }
-    let mut s = 0;
-    for r in &rows {
-        r.count_arrangements(&mut s, 0, r.springs);
-        println!("{s}");
+
+    let mut handles = vec![];
+    let sum =  Arc::new(Mutex::new(0u128));
+    for chunk in rows.chunks(12) {
+        let chunk = chunk.to_vec();
+        let sum = Arc::clone(&sum);
+        handles.push(std::thread::spawn(move || {
+            let mut s = 0;
+            for r in chunk {
+                r.count_arrangements(&mut s, 0, r.springs);
+                println!("{s}");
+            }
+            let mut su = sum.lock().unwrap();
+            *su += s;
+        }));
     }
-    println!("Day 12 part 2: {s}");
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Day 12 part 2: {}", sum.lock().unwrap());
 
 
     Ok(())
@@ -43,7 +60,7 @@ impl Row {
         self.groups = self.groups.repeat(5);
         let damaged = self.springs.damaged;
         let unknown = self.springs.unknown;
-        for i in 0..4 {
+        for _ in 0..4 {
             self.springs.damaged = (self.springs.damaged << (1 + self.springs.length)) | damaged;
             self.springs.unknown <<= 1;
             self.springs.unknown |= 1;
@@ -160,7 +177,13 @@ impl Springs {
             if unknown % 2 == 1 {
                 return false;
             }
-            match damaged.trailing_ones().cmp(&u32::from(n)) {
+            let damaged_trailing_ones = damaged.trailing_ones();
+            if damaged_trailing_ones == 0 {
+                unknown >>= 1;
+                damaged >>= 1;
+                continue;
+            }
+            match damaged_trailing_ones.cmp(&u32::from(n)) {
                 Ordering::Less => {
                     if damaged % 2 == 1
                         &&  damaged.count_ones() + unknown.count_ones() >= row.total_broken
