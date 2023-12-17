@@ -21,6 +21,7 @@ fn main() -> color_eyre::Result<()> {
     }
 
     let mut handles = vec![];
+    #[allow(clippy::mutex_integer)]
     let sum =  Arc::new(Mutex::new(0u128));
     for chunk in rows.chunks(12) {
         let chunk = chunk.to_vec();
@@ -334,6 +335,7 @@ mod tests {
         assert_eq!(r, r2);
     }
 
+    #[cfg(not(debug_assertions))]
     #[test]
     fn it_matches_part2() {
         let mut r: Row = "???.### 1,1,3".parse().unwrap();
