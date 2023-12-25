@@ -1,3 +1,5 @@
+mod polygon;
+
 use std::fmt::{Display, Formatter};
 use std::mem::swap;
 use std::str::FromStr;
@@ -7,13 +9,46 @@ use owo_colors::OwoColorize;
 use color_eyre::Report;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use crate::polygon::{Point, Polygon};
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-    let digplan: DigPlan = include_str!("input.txt").parse().unwrap();
+    let input = include_str!("input.txt");
+    let digplan: DigPlan = input.parse().unwrap();
     let dig_area = digplan.dig_area();
-    println!("{}", dig_area.volume());
+    println!("Day 18 part 1: {}", dig_area.volume());
+    let polygon: Polygon = Polygon::new(&parse_part2(input));
+    println!("Day 18 part 2: {}", polygon.area_with_1_wide_edge());
     Ok(())
+}
+
+#[allow(clippy::cast_possible_wrap)]
+fn parse_part2(s: &str) -> Vec<Point> {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[RLDU] \d+ \(#([0-9a-f]{5})([0-9a-f])\)").unwrap());
+    let mut digs = vec![];
+    for line in s.lines() {
+        let cap = RE.captures(line).unwrap();
+        digs.push(Trench {
+            distance: usize::from_str_radix(&cap[1], 16).unwrap(),
+            direction: Direction::from_str(&cap[2]).unwrap(),
+            colour: owo_colors::DynColors::Rgb(0xff, 0, 0),
+        });
+    }
+    let mut p = Point::new(0, 0);
+    let mut corners: Vec<Point> = vec![p];
+    for trench in digs {
+        let offset = match trench.direction {
+            Direction::Up => (0isize, -1isize),
+            Direction::Down => (0, 1),
+            Direction::Left => (-1, 0),
+            Direction::Right => (1, 0),
+        };
+
+        p.x += offset.0 * trench.distance as isize;
+        p.y += offset.1 * trench.distance as isize;
+        corners.push(p);
+    }
+    corners
 }
 
 /// Implementation of the Even-Odd rule, again.
@@ -92,10 +127,10 @@ impl FromStr for Direction {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "U" => Ok(Self::Up),
-            "R" => Ok(Self::Right),
-            "D" => Ok(Self::Down),
-            "L" => Ok(Self::Left),
+            "U" | "3" => Ok(Self::Up),
+            "R" | "0" => Ok(Self::Right),
+            "D" | "1" => Ok(Self::Down),
+            "L" | "2" => Ok(Self::Left),
             _ => Err(eyre!("Cannot parse direction {s}")),
         }
     }
@@ -235,6 +270,7 @@ impl DigArea {
 
 #[cfg(test)]
 mod tests {
+    use crate::polygon::{Point, Polygon};
     use super::*;
 
     const EXAMPLE1: &str = include_str!("example.txt");
@@ -285,5 +321,20 @@ mod tests {
         let digplan: DigPlan = EXAMPLE1.parse().unwrap();
         let dig_area = digplan.dig_area();
         assert_eq!(dig_area.volume(), 62);
+    }
+
+    #[test]
+    fn it_tests_polygon() {
+        let digplan: DigPlan = EXAMPLE1.parse().unwrap();
+        let dig_area = digplan.dig_area();
+        let corners: Vec<Point> = dig_area.corners.iter().map(|(x, y)| polygon::Point { x: *x as isize, y: *y as isize }).collect();
+        let polygon = Polygon::new(&corners);
+        assert_eq!(polygon.area_with_1_wide_edge(), 62);
+    }
+
+    #[test]
+    fn it_solves_part2() {
+        let polygon: Polygon = Polygon::new(&parse_part2(EXAMPLE1));
+        assert_eq!(polygon.area_with_1_wide_edge(), 952_408_144_115);
     }
 }
