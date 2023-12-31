@@ -1,3 +1,6 @@
+#![feature(let_chains)]
+mod part2;
+
 use std::{collections::HashMap, str::FromStr};
 
 use nom::{
@@ -5,14 +8,19 @@ use nom::{
     character::complete::{alpha1, digit1},
     combinator::{map_res, value, map, all_consuming},
     multi::separated_list1,
-    bytes::complete::tag, sequence::{tuple, delimited, preceded}, error::Error, Finish,
+        bytes::complete::tag, sequence::{tuple, delimited, preceded}, error::Error, Finish,
 };
+
+use crate::part2::build_ranges;
 fn main() {
     let (workflows, parts) = include_str!("input.txt").split_once("\n\n").unwrap();
     let workflows: WorkflowEngine = workflows.parse().unwrap();
     let parts: Vec<Part> = parts.lines().map(Part::from_str).collect::<Result<Vec<_>,_>>().unwrap();
     let s: usize = parts.iter().filter(|p| workflows.is_accepted(p)).map(Part::sum).sum();
     println!("Day 19 part 1: {s}");
+    let ranges = build_ranges(&workflows);
+    let s: usize = ranges.iter().filter(|r| r.outcome == Outcome::Accept).map(part2::Range::product).sum();
+    println!("Day 19 part 2: {s}");
 }
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 struct Part {
@@ -23,7 +31,7 @@ struct Part {
 }
 
 impl Part {
-    fn get(&self, category: Category) -> usize {
+    const fn get(&self, category: Category) -> usize {
         match category {
             Category::X => self.x,
             Category::M => self.m,
@@ -32,7 +40,7 @@ impl Part {
         }
     }
 
-    fn sum(&self) -> usize {
+    const fn sum(&self) -> usize {
         self.x + self.m + self.a + self.s
     }
 }
@@ -143,7 +151,7 @@ struct Condition {
 }
 
 impl Condition {
-    fn applies(&self, part: &Part) -> bool {
+    const fn applies(&self, part: &Part) -> bool {
         match self.op {
             Operator::GreaterThan => part.get(self.lhs) > self.rhs,
             Operator::LessThan => part.get(self.lhs) < self.rhs,
@@ -207,7 +215,7 @@ impl FromStr for Workflow {
             tag("}"),
         )), |(n, _,mut c, _, e, _)| {
             c.push(Rule { condition: None, outcome: e });
-            Workflow {
+            Self {
                 name: n.to_string(),
                 rules: c,
             }
@@ -259,5 +267,16 @@ mod tests {
         let parts: Vec<Part> = parts.lines().map(Part::from_str).collect::<Result<Vec<_>,_>>().unwrap();
         let s: usize = parts.iter().filter(|p| workflows.is_accepted(p)).map(Part::sum).sum();
         assert_eq!(s, 19114);
+     }
+
+     #[test]
+     fn it_gets_ranges() {
+        let (workflows, parts) = EXAMPLE.split_once("\n\n").unwrap();
+        let workflows: WorkflowEngine = workflows.parse().unwrap();
+        let ranges = build_ranges(&workflows);
+    //dbg!(&ranges);
+    
+    let s: usize = ranges.iter().filter(|r| r.outcome == Outcome::Accept).map(|r| r.product()).sum();
+    assert_eq!(s, 167409079868000);
      }
 }
