@@ -1,5 +1,7 @@
 use std::str::FromStr;
 use color_eyre::eyre::eyre;
+
+
 const INPUT: &str = include_str!("input.txt");
 
 fn main() -> color_eyre::Result<()> {
@@ -11,7 +13,9 @@ fn main() -> color_eyre::Result<()> {
     // EX-TER-MI-NATE
     let dalek = (0..tetris.bricks.len()).filter(|i| tetris.clone().can_disintegrate(*i)).count();
 
-    println!("Day 22 part 1: {dalek}"); // 468 is too high
+    println!("Day 22 part 1: {dalek}");
+    let cascade = (0..tetris.bricks.len()).map(|i| tetris.disintegrate_cascade(i)).sum::<usize>();
+    println!("Day 22 part 2: {cascade}");
     Ok(())
 }
 
@@ -38,15 +42,27 @@ impl Block {
 struct Brick {
     a: Block,
     b: Block,
+    /// This is needed to make sure that identically shaped blocks that are right above each other are not "merged"
+    /// when simulating gravity by them being equal.
+    ///
+    /// When parsing the input, this contains the line number.
+    ///
+    /// For dummy bricks, it's None since there should only ever be one of them anyway.
+    id: Option<usize>,
 }
 
 impl Brick {
     const fn new(a: Block, b: Block) -> Self {
         if b.z < a.z {
-            Self { a: b, b: a }
+            Self { a: b, b: a, id: None}
         } else {
-            Self { a, b }
+            Self { a, b, id: None }
         }
+    }
+
+    const fn placeholder() -> Self {
+        let placeholder_block = Block::new(u16::MAX, u16::MAX, u16::MAX);
+        Self::new(placeholder_block, placeholder_block)
     }
     fn min_x(&self) -> u16 {
         self.a.x.min(self.b.x)
@@ -84,7 +100,7 @@ impl Brick {
     }
 
     fn fall(&mut self, others: &[Self]) -> bool {
-        if self.min_z() == u16::MAX {
+        if self.a.z == u16::MAX {
             return false;
         }
         let initial_z = self.a.z;
@@ -131,18 +147,25 @@ struct Tetris {
 }
 
 impl Tetris {
-
     fn can_disintegrate(&mut self, index: usize) -> bool {
-        let placeholder_block = Block::new(u16::MAX, u16::MAX, u16::MAX);
-        let mut placeholder_brick = Brick::new(placeholder_block, placeholder_block);
+        let mut placeholder_brick = Brick::placeholder();
         std::mem::swap(&mut self.bricks[index], &mut placeholder_brick);
         let res = !self.gravity();
         std::mem::swap(&mut self.bricks[index], &mut placeholder_brick);
         res
     }
+
+    fn disintegrate_cascade(&self, index: usize) -> usize {
+        let mut t = self.clone();
+        let mut placeholder_brick = Brick::placeholder();
+        std::mem::swap(&mut t.bricks[index], &mut placeholder_brick);
+        t.gravity();
+        std::mem::swap(&mut t.bricks[index], &mut placeholder_brick);
+        self.bricks.iter().enumerate().filter(|(i, b)|*i != index && **b != t.bricks[*i]).count()
+    }
+
     fn gravity(&mut self) -> bool {
-        let placeholder_block = Block::new(u16::MAX, u16::MAX, u16::MAX);
-        let mut placeholder_brick = Brick::new(placeholder_block, placeholder_block);
+        let mut placeholder_brick = Brick::placeholder();
         let mut final_movement = false;
         let mut one_has_moved = true;
         while one_has_moved {
@@ -197,7 +220,7 @@ impl Tetris {
                     _ => s.push('?'),
                 };
             }
-            s.push_str(&format!(" {z}{}\n", if z == (max_z + 2 - min_z) / 2 { " z"} else {""}));
+            s.push_str(&format!(" {z}{}\n", if z == (max_z + 2 - min_z) / 2 { " z" } else { "" }));
         }
         s.push_str(&format!("{} 0", "-".repeat((max_x - min_x + 1) as usize)));
         s
@@ -239,7 +262,7 @@ impl Tetris {
                     _ => s.push('?'),
                 };
             }
-            s.push_str(&format!(" {z}{}\n", if z == (max_z + 2 - min_z) / 2 { " z"} else {""}));
+            s.push_str(&format!(" {z}{}\n", if z == (max_z + 2 - min_z) / 2 { " z" } else { "" }));
         }
         s.push_str(&format!("{} 0", "-".repeat((max_y - min_y + 1) as usize)));
         s
@@ -251,57 +274,73 @@ impl FromStr for Tetris {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self {
-            bricks: s.lines().map(Brick::from_str).collect::<Result<Vec<_>, _>>()?
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const EXAMPLE: &str = include_str!("example.txt");
-
-    #[test]
-    fn it_parses_tetris() {
-        let tetris: Tetris = EXAMPLE.parse().unwrap();
-        assert_eq!(tetris.bricks.len(), 7);
+            bricks: s.lines().enumerate().map(|(i, line)| {
+                let brick = Brick::from_str(line);
+                brick.map(|mut b| {
+                    b.id = Some(i);
+                    b
+                })
+                }).collect::<Result<Vec<_>, _>>()?
+            })
+        }
     }
 
-    #[test]
-    fn it_simulates_gravity() {
-        let mut tetris: Tetris = EXAMPLE.parse().unwrap();
-        dbg!(&tetris);
-        assert_eq!(tetris.bricks[6].min_z(), 8);
-        assert!(tetris.gravity());
-        dbg!(&tetris);
-        assert_eq!(tetris.bricks[6].min_z(), 5);
-        assert!(!tetris.gravity());
-    }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
 
-    #[test]
-    fn it_can_safely_disintegrate() {
-        let mut tetris: Tetris = EXAMPLE.parse().unwrap();
-        println!("{:?}", tetris.bricks[1]);
-        println!("{}", tetris.plot_x());
-        println!("{}", tetris.plot_y());
-        assert!(tetris.gravity());
-        println!("{}", tetris.plot_x());
-        println!("{}", tetris.plot_y());
-        assert!(!tetris.clone().can_disintegrate(0));
-        assert!(tetris.can_disintegrate(1));
-        assert!(tetris.can_disintegrate(2));
-        assert!(tetris.can_disintegrate(3));
-        assert!(tetris.can_disintegrate(4));
-        assert!(!tetris.clone().can_disintegrate(5));
-        assert!(tetris.can_disintegrate(6));
-    }
+        const EXAMPLE: &str = include_str!("example.txt");
 
-    #[test]
-    fn it_can_disintegrate_sum() {
-        let mut tetris: Tetris = EXAMPLE.parse().unwrap();
-        tetris.gravity();
-        let dalek = (0..tetris.bricks.len()).filter(|i| tetris.clone().can_disintegrate(*i)).count();
-        assert_eq!(dalek, 5);
+        #[test]
+        fn it_parses_tetris() {
+            let tetris: Tetris = EXAMPLE.parse().unwrap();
+            assert_eq!(tetris.bricks.len(), 7);
+        }
+
+        #[test]
+        fn it_simulates_gravity() {
+            let mut tetris: Tetris = EXAMPLE.parse().unwrap();
+            dbg!(&tetris);
+            assert_eq!(tetris.bricks[6].min_z(), 8);
+            assert!(tetris.gravity());
+            dbg!(&tetris);
+            assert_eq!(tetris.bricks[6].min_z(), 5);
+            assert!(!tetris.gravity());
+        }
+
+        #[test]
+        fn it_can_safely_disintegrate() {
+            let mut tetris: Tetris = EXAMPLE.parse().unwrap();
+            println!("{:?}", tetris.bricks[1]);
+            println!("{}", tetris.plot_x());
+            println!("{}", tetris.plot_y());
+            assert!(tetris.gravity());
+            println!("{}", tetris.plot_x());
+            println!("{}", tetris.plot_y());
+            assert!(!tetris.clone().can_disintegrate(0));
+            assert!(tetris.can_disintegrate(1));
+            assert!(tetris.can_disintegrate(2));
+            assert!(tetris.can_disintegrate(3));
+            assert!(tetris.can_disintegrate(4));
+            assert!(!tetris.clone().can_disintegrate(5));
+            assert!(tetris.can_disintegrate(6));
+        }
+
+        #[test]
+        fn it_can_disintegrate_sum() {
+            let mut tetris: Tetris = EXAMPLE.parse().unwrap();
+            dbg!(&tetris);
+            tetris.gravity();
+            let dalek = (0..tetris.bricks.len()).filter(|i| tetris.clone().can_disintegrate(*i)).count();
+            assert_eq!(dalek, 5);
+        }
+
+        #[test]
+        fn it_counts_disintegration_cascade() {
+            let mut tetris: Tetris = EXAMPLE.parse().unwrap();
+            tetris.gravity();
+            assert_eq!(tetris.disintegrate_cascade(0), 6);
+            assert_eq!(tetris.disintegrate_cascade(5), 1);
+            assert_eq!((0..tetris.bricks.len()).map(|i| tetris.disintegrate_cascade(i)).sum::<usize>(), 7);
+        }
     }
-}
