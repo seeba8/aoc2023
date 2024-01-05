@@ -1,7 +1,6 @@
 #![feature(let_chains)]
 
-use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use color_eyre::eyre::eyre;
@@ -13,7 +12,11 @@ fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let mut grid: Grid = INPUT.parse()?;
     grid.find_edges(true);
-    println!("Day 23 part 1: {}", grid.longest_path());
+    println!("Day 23 part 1: {}", grid.longest_path_dijkstra());
+
+    let mut grid: Grid = INPUT.parse()?;
+    grid.find_edges(false);
+    println!("Day 23 part 2: {}", grid.longest_path());
     Ok(())
 }
 
@@ -155,9 +158,15 @@ impl Grid {
         self.edges.insert(current_edge);
     }
 
+    fn longest_path(&self) -> usize {
+        let mut res = 0;
+        self.longest_path_bruteforce(self.start, &mut HashSet::new(), 0, &mut res);
+        res
+    }
+
     /// Dijkstra with negative edge weight, assuming we are in a DAG.
     /// if not: brute force should work, not too many edges
-    fn longest_path(&self) -> usize {
+    fn longest_path_dijkstra(&self) -> usize {
         assert!(!self.edges.is_empty(), "First run `find_edges()`");
         let mut visited_vertices = HashSet::new();
         let mut distances: HashMap<usize, usize> = HashMap::new();
@@ -184,6 +193,22 @@ impl Grid {
             }
         }
         distances[&self.end]
+    }
+
+    /// Yay recursive brute force algorithm
+    fn longest_path_bruteforce(&self, position: usize, visited: &mut HashSet<usize>, distance: usize, longest_distance: &mut usize) {
+        if position == self.end {
+            if distance > *longest_distance {
+                *longest_distance = distance;
+            }
+            return;
+        }
+        let unvisited_edges = self.edges.iter().filter(|edge| edge.start == position && !visited.contains(&edge.end)).collect_vec();
+        for edge in  unvisited_edges{
+            visited.insert(edge.end);
+            self.longest_path_bruteforce(edge.end, visited, distance + edge.length, longest_distance);
+            visited.remove(&edge.end);
+        }
     }
 
     /// Returns a Mermaid.js compatible string for a flowchart
@@ -307,6 +332,13 @@ mod tests {
         let mut grid: Grid = EXAMPLE.parse().unwrap();
         grid.find_edges(true);
         assert_eq!(grid.longest_path(), 94);
+    }
+
+    #[test]
+    fn it_finds_longest_path_with_dijkstra() {
+        let mut grid: Grid = EXAMPLE.parse().unwrap();
+        grid.find_edges(true);
+        assert_eq!(grid.longest_path_dijkstra(), 94);
     }
 
     #[test]
