@@ -1,17 +1,18 @@
 #![feature(let_chains)]
 
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use color_eyre::eyre::eyre;
+use itertools::Itertools;
 
 const INPUT: &str = include_str!("input.txt");
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let mut grid: Grid = INPUT.parse()?;
-    grid.find_edges();
+    grid.find_edges(true);
     println!("Day 23 part 1: {}", grid.longest_path());
     Ok(())
 }
@@ -55,7 +56,7 @@ impl TryFrom<char> for Block {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 struct Edge {
     start: usize,
     end: usize,
@@ -64,26 +65,9 @@ struct Edge {
     path: Vec<usize>,
 }
 
-impl PartialOrd for Edge {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Edge {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let start_cmp = self.start.cmp(&other.start);
-        if start_cmp == Ordering::Equal {
-            self.end.cmp(&other.end)
-        } else {
-            start_cmp
-        }
-    }
-}
-
 struct Grid {
     tiles: Vec<Block>,
-    edges: BTreeSet<Edge>,
+    edges: HashSet<Edge>,
     width: usize,
     start: usize,
     end: usize,
@@ -99,7 +83,7 @@ impl FromStr for Grid {
         assert_eq!(tiles.len(), width * height);
         Ok(Self {
             tiles,
-            edges: BTreeSet::new(),
+            edges: HashSet::new(),
             width,
             start: 1,
             end: width * height - 2,
@@ -109,7 +93,7 @@ impl FromStr for Grid {
 
 impl Grid {
     /// since we come from one direction, we can go in at most 3 directions. But iterating through all 4 is easier
-    fn neighbours(&self, position: usize, previous: usize) -> [Option<usize>; 4] {
+    fn neighbours(&self, position: usize, previous: usize, impassible_slopes: bool) -> [Option<usize>; 4] {
         let mut res: [Option<usize>; 4] = [None; 4];
         if position / self.width == 0 || position >= self.tiles.len() - self.width {
             // top or bottom row where we can't be outside of start/end
@@ -126,23 +110,27 @@ impl Grid {
             (position - 1, Block::SlopeRight)]
             .into_iter()
             .enumerate() {
-            if ![Block::Forest, impassible_slope].contains(&self.tiles[neighbour]) && neighbour != previous {
+            let tile = self.tiles[neighbour];
+            if neighbour != previous && tile != Block::Forest
+                && (!impassible_slopes || tile != impassible_slope) {
                 res[i] = Some(neighbour);
             }
         }
         res
     }
-    fn find_edges(&mut self) {
+
+    fn find_edges(&mut self, slopes_are_impassible: bool) {
         let current_edge = Edge { start: self.start, ..Default::default() };
         let previous = self.start;
         let position = self.start + self.width;
-        self.follow_edge(current_edge, position, previous);
+        self.follow_edge(current_edge, position, previous, slopes_are_impassible);
     }
-    fn follow_edge(&mut self, mut current_edge: Edge, mut position: usize, mut previous: usize) {
+
+    fn follow_edge(&mut self, mut current_edge: Edge, mut position: usize, mut previous: usize, slopes_are_impassible: bool) {
         while position != self.end {
             current_edge.length += 1;
 
-            let neighbours = self.neighbours(position, previous);
+            let neighbours = self.neighbours(position, previous, slopes_are_impassible);
             if neighbours.iter().filter_map(|c| *c).count() == 1 {
                 // no intersection
                 #[cfg(debug_assertions)]
@@ -155,9 +143,10 @@ impl Grid {
             }
             // we have reached an intersection!
             current_edge.end = position;
-            self.edges.insert(current_edge);
-            for neighbour in neighbours.into_iter().flatten() {
-                self.follow_edge(Edge { start: position, ..Default::default() }, neighbour, position);
+            if self.edges.insert(current_edge) {
+                for neighbour in neighbours.into_iter().flatten() {
+                    self.follow_edge(Edge { start: position, ..Default::default() }, neighbour, position, slopes_are_impassible);
+                }
             }
             return;
         }
@@ -165,38 +154,55 @@ impl Grid {
         current_edge.end = position;
         self.edges.insert(current_edge);
     }
+
+    /// Dijkstra with negative edge weight, assuming we are in a DAG.
+    /// if not: brute force should work, not too many edges
     fn longest_path(&self) -> usize {
         assert!(!self.edges.is_empty(), "First run `find_edges()`");
+        let mut visited_vertices = HashSet::new();
         let mut distances: HashMap<usize, usize> = HashMap::new();
         let mut queue: VecDeque<usize> = VecDeque::new();
         queue.push_back(self.start);
         distances.insert(self.start, 0);
         while let Some(u) = queue.pop_front() {
             let distance_to_u = distances[&u];
+            let new_node = visited_vertices.insert(u);
             for n in self.edges.iter().filter(|edge| edge.start == u) {
                 distances.entry(n.end).and_modify(|distance| {
                     if *distance < distance_to_u + n.length {
                         *distance = distance_to_u + n.length;
-                        queue.push_back(n.end);
+                        if new_node {
+                            queue.push_back(n.end);
+                        }
                     }
                 }).or_insert_with(|| {
-                    queue.push_back(n.end);
+                    if new_node {
+                        queue.push_back(n.end);
+                    }
                     distance_to_u + n.length
                 });
             }
         }
         distances[&self.end]
-        // dijkstra with negative edge weight if we are in a DAG
-        // if not: brute force should work, not too many edges
     }
 
     /// Returns a Mermaid.js compatible string for a flowchart
     #[allow(unused)]
     fn mermaid(&self) -> String {
         assert!(!self.edges.is_empty(), "First run `find_edges()`");
+        let unique_edges = self.edges.iter().unique_by(|e| {
+            (e.length, e.start.min(e.end), e.start.max(e.end))
+        }).collect_vec();
+        dbg!(unique_edges.len());
+        dbg!(self.edges.len());
+        let arrow_sign = if unique_edges.len() == self.edges.len() {
+            '>'
+        } else {
+            '-'
+        };
         let mut out = String::from("flowchart TD\n");
-        for &Edge { start, length, end, .. } in &self.edges {
-            out.push_str(&format!("\t{start} -->|{length}| {end}\n"));
+        for &Edge { start, length, end, .. } in unique_edges {
+            out.push_str(&format!("\t{start} --{arrow_sign}|{length}| {end}\n"));
         }
         out
     }
@@ -252,52 +258,68 @@ mod tests {
     #[test]
     fn it_gets_neighbours() {
         let grid: Grid = EXAMPLE.parse().unwrap();
-        let neighbours = grid.neighbours(grid.width + 1, grid.start);
+        let neighbours = grid.neighbours(grid.width + 1, grid.start, true);
         assert_eq!(neighbours.iter().filter_map(|c| *c).collect::<Vec<_>>(), vec![grid.width + 2]);
     }
 
     /**
     ```mermaid
-    flowchart T
-         1 -->|15| 11
-         118 -->|22| 8
-         80 -->|45| 52
-         80 -->|24| 31
-         312 -->|33| 527
+    flowchart TD
+        80 -->|24| 312
+        312 -->|33| 527
         312 -->|25| 527
-        118 -->|22| 304
-        304 -->|12| 312
+        118 -->|22| 80
+        1 -->|15| 118
         304 -->|53| 527
+        304 -->|12| 312
+        118 -->|22| 304
+        80 -->|45| 527
     ```
      */
     #[test]
     fn it_finds_edges() {
         let mut grid: Grid = EXAMPLE.parse().unwrap();
-        grid.find_edges();
+        grid.find_edges(true);
         println!("{grid}");
-        assert_eq!(grid.edges.len(), 8);
+        assert_eq!(grid.edges.len(), 9);
     }
 
     #[test]
     fn it_gets_mermaid_diagram() {
         let mut grid: Grid = EXAMPLE.parse().unwrap();
-        grid.find_edges();
+        grid.find_edges(true);
         let expected = r"flowchart TD
-	1 -->|15| 118
 	80 -->|24| 312
-	80 -->|45| 527
+	312 -->|33| 527
+	312 -->|25| 527
 	118 -->|22| 80
-	118 -->|22| 304
-	304 -->|12| 312
+	1 -->|15| 118
 	304 -->|53| 527
-	312 -->|33| 527";
-        assert_eq!(expected, grid.mermaid().trim_end());
+	304 -->|12| 312
+	118 -->|22| 304
+	80 -->|45| 527";
+        let actual = grid.mermaid();
+        assert!(actual.lines().all(|line| expected.contains(line)));
     }
 
     #[test]
     fn it_finds_longest_path() {
         let mut grid: Grid = EXAMPLE.parse().unwrap();
-        grid.find_edges();
+        grid.find_edges(true);
         assert_eq!(grid.longest_path(), 94);
+    }
+
+    #[test]
+    fn it_finds_edges_ignoring_slopes() {
+        let mut grid: Grid = EXAMPLE.parse().unwrap();
+        grid.find_edges(false);
+        assert_eq!(grid.edges.len(), 23);
+    }
+
+    #[test]
+    fn it_finds_longest_path_ignoring_slopes() {
+        let mut grid: Grid = EXAMPLE.parse().unwrap();
+        grid.find_edges(false);
+        assert_eq!(grid.longest_path(), 154);
     }
 }
